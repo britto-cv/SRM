@@ -118,11 +118,19 @@ export class SRMISTPortalAdapter {
 
 
   private async navigateToForm(page: Page, formId: number): Promise<void> {
-    await Promise.all([
-      page.waitForNavigation({ waitUntil: 'networkidle' }).catch(() => {}), 
-      page.click(`#listId${formId}`)
-    ]);
-    await page.waitForTimeout(2000); 
+    try {
+      console.log(`[Adapter] Clicking menu item #listId${formId}...`);
+      await page.click(`#listId${formId}`);
+      // Wait for DOM load or target table to render
+      await Promise.race([
+        page.waitForSelector('table.table, tbody tr', { timeout: 10000 }),
+        page.waitForLoadState('domcontentloaded', { timeout: 10000 }),
+        page.waitForTimeout(3000)
+      ]).catch(() => {});
+    } catch (e: any) {
+      console.warn(`[Adapter] Warning navigating to form ${formId}:`, e.message);
+    }
+    await page.waitForTimeout(1000); 
   }
 
   private async extractCourseCredits(page: Page): Promise<Record<string, number>> {

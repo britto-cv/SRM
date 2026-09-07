@@ -71,7 +71,18 @@ export interface NormalizedStudentData {
   academic?: AcademicData;
 }
 
-export type ConnectionState = 'DISCONNECTED' | 'LAUNCHING' | 'WAITING_FOR_LOGIN' | 'AUTHENTICATED' | 'DATA_READY' | 'LOGIN_FAILED' | 'TIMEOUT' | 'ERROR' | 'DISCONNECTING';
+export type ConnectionState = 
+  | 'DISCONNECTED' 
+  | 'LAUNCHING' 
+  | 'WAITING_FOR_LOGIN' 
+  | 'AUTHENTICATING'
+  | 'LOGIN_FAILED' 
+  | 'AUTHENTICATED' 
+  | 'EXTRACTING'
+  | 'DATA_READY' 
+  | 'TIMEOUT' 
+  | 'DISCONNECTING' 
+  | 'ERROR';
 
 export type HealthStatus = 'SAFE' | 'WATCH' | 'AT_RISK' | 'BELOW_TARGET' | 'UNAVAILABLE';
 
@@ -89,14 +100,3 @@ export interface SubjectAttendanceResult {
   healthStatus: HealthStatus;
 }
 
-export interface CaptchaResponse {
-  sessionId: string;
-  captchaImageBase64: string;
-}
-
-export interface LoginCredentials {
-  sessionId: string;
-  netId: string;
-  password: string;
-  captchaValue: string;
-}

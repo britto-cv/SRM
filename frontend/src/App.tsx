@@ -9,12 +9,8 @@ import type { TabType } from './components/TopNav';
 import { BottomNav } from './components/BottomNav';
 import { SettingsModal } from './components/SettingsModal';
 import { PwaInstallPrompt } from './components/PwaInstallPrompt';
-import { LoginModal } from './components/LoginModal';
 import { apiFetch } from './utils/api';
-import type { CaptchaResponse, LoginCredentials } from '@srm/shared';
 import './App.css';
-
-const ACADEMIC_STORAGE_KEY = 'srm_academic_data';
 
 /** Build a NormalizedStudentData from manually entered subjects */
 function buildManualStudentData(subjects: ManualSubject[]): NormalizedStudentData {
@@ -38,17 +34,27 @@ function buildManualStudentData(subjects: ManualSubject[]): NormalizedStudentDat
 
 function App() {
   const [appState, setAppState] = useState<ConnectionState>('DISCONNECTED');
+  const [statusDetail, setStatusDetail] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [studentData, setStudentData] = useState<NormalizedStudentData | null>(null);
   const [showManualEntry, setShowManualEntry] = useState(false);
   const [manualSubjects, setManualSubjects] = useState<ManualSubject[]>([]);
   const [isManualMode, setIsManualMode] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('health');
   const [showSettings, setShowSettings] = useState(false);
-  const [targetRefresh, setTargetRefresh] = useState(0); 
-  const [captchaData, setCaptchaData] = useState<CaptchaResponse | null>(null);
-  const [loginError, setLoginError] = useState<string | undefined>(undefined);
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
-  const pollIntervalRef = useRef<number | null>(null);
+  const [targetRefresh, setTargetRefresh] = useState(0);
+
+  // Use refs to track current state to avoid stale closures in polling
+  const appStateRef = useRef(appState);
+  const sessionIdRef = useRef(sessionId);
+  
+  useEffect(() => {
+    appStateRef.current = appState;
+  }, [appState]);
+
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
 
   // On mount — load any previously saved manual subjects
   useEffect(() => {
@@ -58,135 +64,114 @@ function App() {
     }
   }, []);
 
-  const startPolling = () => {
-    if (pollIntervalRef.current) return;
-    pollIntervalRef.current = window.setInterval(async () => {
+  // Polling logic for auth state
+  useEffect(() => {
+    let timeoutId: any;
+
+    const pollStatus = async () => {
       try {
-        const res = await apiFetch('/api/connect/status');
+        const queryParam = sessionIdRef.current ? `?sessionId=${encodeURIComponent(sessionIdRef.current)}` : '';
+        const res = await apiFetch(`/api/connect/status${queryParam}`);
         if (res.ok) {
           const data = await res.json();
-          setAppState(data.state);
+          const newState = data.state;
+          if (data.detail) {
+            setStatusDetail(data.detail);
+          }
+          if (data.sessionId && !sessionIdRef.current) {
+            setSessionId(data.sessionId);
+          }
           
-          if (data.state === 'DATA_READY') {
-            stopPolling();
-            fetchStudentData();
-          } else if (data.state === 'ERROR' || data.state === 'DISCONNECTED' || data.state === 'TIMEOUT') {
-            stopPolling();
+          if (newState !== appStateRef.current) {
+            setAppState(newState);
+            
+            if (newState === 'DATA_READY') {
+              fetchData(data.sessionId || sessionIdRef.current);
+            }
           }
         }
       } catch (err) {
-        console.error('Failed to poll status', err);
+        console.error('Polling error:', err);
       }
-    }, 1000);
-  };
+      
+      // Continue polling if in active connection lifecycle
+      if (['LAUNCHING', 'WAITING_FOR_LOGIN', 'AUTHENTICATING', 'LOGIN_FAILED', 'AUTHENTICATED', 'EXTRACTING'].includes(appStateRef.current)) {
+        timeoutId = setTimeout(pollStatus, 1200);
+      }
+    };
 
-  const fetchStudentData = async () => {
+    if (['LAUNCHING', 'WAITING_FOR_LOGIN', 'AUTHENTICATING', 'LOGIN_FAILED', 'AUTHENTICATED', 'EXTRACTING'].includes(appState)) {
+      timeoutId = setTimeout(pollStatus, 1200);
+    }
+
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [appState]);
+
+  const fetchData = async (_sid?: string | null) => {
     try {
       const res = await apiFetch('/api/connect/data');
       if (res.ok) {
         const data = await res.json();
-        
-        // Load local academic data
-        try {
-          const savedAcademic = localStorage.getItem(ACADEMIC_STORAGE_KEY);
-          if (savedAcademic) {
-            data.academic = JSON.parse(savedAcademic);
-          }
-        } catch (e) {}
-
         setStudentData(data);
         setIsManualMode(false);
         setActiveTab('health');
+        setAppState('DATA_READY');
+        setStatusDetail('Data ready');
       } else {
+        const errData = await res.json().catch(() => ({}));
+        setStatusDetail(errData.error || 'Failed to retrieve academic data');
         setAppState('ERROR');
       }
-    } catch (err) {
-      console.error('Failed to fetch data', err);
+    } catch (err: any) {
+      setStatusDetail(err.message || 'Failed to retrieve academic data');
       setAppState('ERROR');
     }
   };
-
-  const stopPolling = () => {
-    if (pollIntervalRef.current) {
-      clearInterval(pollIntervalRef.current);
-      pollIntervalRef.current = null;
-    }
-  };
-
-  useEffect(() => {
-    return () => stopPolling();
-  }, []);
 
   const handleConnect = async () => {
     setAppState('LAUNCHING');
+    setStatusDetail('Starting secure browser session...');
     setStudentData(null);
     setIsManualMode(false);
-    setLoginError(undefined);
-    setCaptchaData(null);
+    
     try {
       const res = await apiFetch('/api/connect', { method: 'POST' });
-      if (!res.ok) throw new Error('API not available');
-      
-      const data = await res.json();
-      if (data.sessionId && data.captchaImageBase64) {
-        setCaptchaData(data);
-        setAppState('WAITING_FOR_LOGIN');
-      } else {
-        throw new Error('Invalid response from server');
-      }
-    } catch (err) {
-      setAppState('ERROR');
-    }
-  };
-
-  const handleLogin = async (credentials: LoginCredentials) => {
-    setIsLoggingIn(true);
-    setLoginError(undefined);
-    try {
-      const res = await apiFetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(credentials)
-      });
-      
       if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'Login failed');
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to start browser session');
       }
-
-      const data = await res.json();
       
-      // Save data locally
-      try {
-        if (data.academic) {
-          localStorage.setItem(ACADEMIC_STORAGE_KEY, JSON.stringify(data.academic));
-        }
-      } catch (e) {}
-
-      setStudentData(data);
-      setIsManualMode(false);
-      setAppState('DATA_READY');
-      setActiveTab('health');
-      setCaptchaData(null);
+      const data = await res.json();
+      if (data.sessionId) {
+        setSessionId(data.sessionId);
+      }
+      if (data.status) {
+        setAppState(data.status);
+      }
     } catch (err: any) {
-      setLoginError(err.message || 'Authentication failed. Please try again.');
-      // Keep state as WAITING_FOR_LOGIN so they can try again, but we might need a fresh CAPTCHA
-      // In a robust implementation we'd fetch a new CAPTCHA here. For now we let them re-click connect.
-    } finally {
-      setIsLoggingIn(false);
+      console.error('Failed to initiate connect:', err);
+      setStatusDetail(err.message || 'Failed to start browser session');
+      setAppState('ERROR');
     }
   };
 
   const handleDisconnect = async () => {
     setAppState('DISCONNECTING');
+    setStatusDetail('Cleaning up session...');
     try {
       await apiFetch('/api/disconnect', { method: 'POST' });
       setAppState('DISCONNECTED');
+      setSessionId(null);
       setStudentData(null);
+      setStatusDetail(null);
       setIsManualMode(false);
-      stopPolling();
     } catch (err) {
       console.error('Failed to disconnect', err);
+      setAppState('DISCONNECTED');
+      setSessionId(null);
+      setStatusDetail(null);
     }
   };
 
@@ -199,15 +184,6 @@ function App() {
   const handleManualSave = (subjects: ManualSubject[]) => {
     setManualSubjects(subjects);
     const data = buildManualStudentData(subjects);
-    
-    // Load local academic data for manual mode too
-    try {
-      const savedAcademic = localStorage.getItem(ACADEMIC_STORAGE_KEY);
-      if (savedAcademic) {
-        data.academic = JSON.parse(savedAcademic);
-      }
-    } catch (e) {}
-
     setStudentData(data);
     setIsManualMode(true);
     setShowManualEntry(false);
@@ -219,7 +195,6 @@ function App() {
     if (studentData) {
       const updatedData = { ...studentData, academic };
       setStudentData(updatedData);
-      localStorage.setItem(ACADEMIC_STORAGE_KEY, JSON.stringify(academic));
     }
   };
 
@@ -266,36 +241,73 @@ function App() {
       )}
 
       <main className="main-content">
-        {/* Welcome / Landing Screen (when completely disconnected) */}
+        {/* Welcome / Landing Screen (when completely disconnected or after error) */}
         {(appState === 'DISCONNECTED' || appState === 'ERROR' || appState === 'TIMEOUT') && (
-          <LandingPage onStartPlanning={handleManualEdit} onConnect={handleConnect} />
+          <div>
+            {appState === 'ERROR' && statusDetail && (
+              <div style={{ maxWidth: '600px', margin: '1rem auto', padding: '1rem', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', borderRadius: '12px', border: '1px solid rgba(239, 68, 68, 0.2)', textAlign: 'center', fontSize: '0.95rem' }}>
+                <strong>Connection Error:</strong> {statusDetail}
+              </div>
+            )}
+            {appState === 'TIMEOUT' && (
+              <div style={{ maxWidth: '600px', margin: '1rem auto', padding: '1rem', background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b', borderRadius: '12px', border: '1px solid rgba(245, 158, 11, 0.2)', textAlign: 'center', fontSize: '0.95rem' }}>
+                <strong>Session Timed Out:</strong> Login window remained open without authentication for 10 minutes.
+              </div>
+            )}
+            <LandingPage onStartPlanning={handleManualEdit} onConnect={handleConnect} />
+          </div>
         )}
 
-        {(appState === 'LAUNCHING' || appState === 'DISCONNECTING') && (
+        {appState === 'LAUNCHING' && (
           <div className="empty-state connecting">
             <div className="spinner"></div>
-            <h2>{appState === 'DISCONNECTING' ? 'Disconnecting...' : 'Starting secure browser session...'}</h2>
+            <h2>Starting secure browser session...</h2>
             <div style={{ marginTop: '1rem', color: 'var(--text-muted)' }}>
-              <p>Connecting to SRMIST...</p>
+              <p>Opening local browser for authentication...</p>
             </div>
           </div>
         )}
 
-        {(appState === 'WAITING_FOR_LOGIN' || appState === 'LOGIN_FAILED') && captchaData && (
-          <LoginModal 
-            captchaData={captchaData}
-            onLogin={handleLogin}
-            onClose={() => setAppState('DISCONNECTED')}
-            error={loginError}
-            isLoggingIn={isLoggingIn}
-          />
+        {(appState === 'WAITING_FOR_LOGIN' || appState === 'AUTHENTICATING' || appState === 'LOGIN_FAILED') && (
+          <div className="empty-state connecting">
+            <div className="spinner"></div>
+            <h2>{appState === 'AUTHENTICATING' ? 'Authenticating with SRMIST...' : 'Waiting for Authentication'}</h2>
+            <div style={{ marginTop: '1rem', color: 'var(--text-muted)', maxWidth: '440px', margin: '1rem auto' }}>
+              <p style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                SRMIST browser opened — please complete login
+              </p>
+              <p style={{ marginTop: '0.5rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                Please manually enter your NetID, password, and CAPTCHA in the open browser window.
+              </p>
+              {appState === 'AUTHENTICATING' && (
+                <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'rgba(59, 130, 246, 0.1)', color: '#60a5fa', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+                  Verifying credentials and security checks...
+                </div>
+              )}
+              {appState === 'LOGIN_FAILED' && (
+                <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+                  <strong>Invalid credentials detected.</strong> Please check your NetID, password, or CAPTCHA in the open browser window.
+                </div>
+              )}
+            </div>
+          </div>
         )}
 
-        {appState === 'AUTHENTICATED' && (
+        {appState === 'DISCONNECTING' && (
+          <div className="empty-state connecting">
+            <div className="spinner"></div>
+            <h2>Disconnecting...</h2>
+            <div style={{ marginTop: '1rem', color: 'var(--text-muted)' }}>
+              <p>Cleaning up session safely...</p>
+            </div>
+          </div>
+        )}
+
+        {(appState === 'AUTHENTICATED' || appState === 'EXTRACTING') && (
           <div style={{ padding: '1rem 0' }}>
             <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
               <h2 style={{ margin: '0 0 0.5rem 0', fontSize: '1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem' }}>
-                <span className="spinner" style={{ width: '20px', height: '20px', margin: 0 }}></span> Extracting Academic Data...
+                <span className="spinner" style={{ width: '20px', height: '20px', margin: 0 }}></span> {appState === 'AUTHENTICATED' ? 'Authentication successful' : 'Extracting academic data...'}
               </h2>
               <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Parsing attendance portal and calculating projections.</p>
             </div>

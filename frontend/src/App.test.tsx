@@ -21,8 +21,8 @@ describe('App Integration', () => {
     fireEvent.click(btn);
     
     await waitFor(() => {
-      expect(screen.getByText(/Connecting to SRMIST.../i)).toBeInTheDocument();
-      expect(screen.getByText(/Starting secure browser session.../i)).toBeInTheDocument();
+      expect(screen.getByText(/Opening local browser for authentication\.\.\./i)).toBeInTheDocument();
+      expect(screen.getByText(/Starting secure browser session\.\.\./i)).toBeInTheDocument();
     });
   });
 

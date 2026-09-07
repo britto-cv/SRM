@@ -37,7 +37,8 @@ app.get('/api/dummy-data', (req: Request, res: Response) => {
 });
 
 const server = app.listen(port, () => {
-  console.log(`Backend service listening at http://localhost:${port}`);
+  console.log(`[SRM] Node process started (PID: ${process.pid})`);
+  console.log(`[SRM] Backend service listening at http://localhost:${port}`);
 });
 
 // Defensive Cleanup on Process Shutdown
