@@ -47,8 +47,41 @@ router.get('/connect/status', (req: Request, res: Response) => {
   res.json({ 
     state: sessionManager.getState(),
     detail: sessionManager.getStateDetail(),
-    sessionId: currentSessionId
+    sessionId: currentSessionId,
+    captchaBase64: sessionManager.getCaptchaBase64()
   });
+});
+
+/**
+ * POST /api/connect/submit
+ * Submits the student credentials and captcha to the headless session.
+ */
+router.post('/connect/submit', async (req: Request, res: Response) => {
+  console.log('[SRM] Received POST /api/connect/submit request');
+  const { sessionId, netId, password, captcha } = req.body;
+
+  if (!sessionId || !netId || !password || !captcha) {
+    res.status(400).json({ error: 'Missing required credential fields' });
+    return;
+  }
+
+  const currentSessionId = sessionManager.getSessionId();
+  if (sessionId !== currentSessionId) {
+    res.status(400).json({ error: 'Invalid or expired session ID' });
+    return;
+  }
+
+  try {
+    const success = await sessionManager.submitCredentials(netId, password, captcha);
+    if (success) {
+      res.json({ status: 'AUTHENTICATING' });
+    } else {
+      res.status(500).json({ error: 'Failed to submit credentials' });
+    }
+  } catch (error: any) {
+    console.error('[SRM] Error in POST /api/connect/submit:', error);
+    res.status(500).json({ error: error.message || 'Failed to submit credentials' });
+  }
 });
 
 /**

@@ -43,6 +43,7 @@ export class PlaywrightSessionManager {
   
   private currentState: ConnectionState = 'DISCONNECTED';
   private stateDetail: string | null = null;
+  private activeCaptchaBase64: string | null = null;
   private detector: AuthenticationDetector;
   private activeData: NormalizedStudentData | null = null;
   private isConnecting: boolean = false;
@@ -65,6 +66,10 @@ export class PlaywrightSessionManager {
 
   public getData(): NormalizedStudentData | null {
     return this.activeData;
+  }
+
+  public getCaptchaBase64(): string | null {
+    return this.activeCaptchaBase64;
   }
 
   private setState(state: ConnectionState, detail?: string) {
@@ -113,20 +118,15 @@ export class PlaywrightSessionManager {
     console.log(`[SRM] /connect request received. Created Session ID: ${this.sessionId}`);
 
     try {
-      this.setState('LAUNCHING', 'Launching visible local browser...');
+      // Verify remote server environment
+      const isRemoteServer = !!(process.env.RENDER || process.env.RAILWAY_ENVIRONMENT || process.env.VERCEL || process.env.FLY_ALLOC_ID || process.env.PLAYWRIGHT_HEADLESS === 'true');
+      const useHeadless = isRemoteServer;
 
-      // Verify display capability for local headed launch
-      const isRemoteServer = !!(process.env.RENDER || process.env.RAILWAY_ENVIRONMENT || process.env.VERCEL || process.env.FLY_ALLOC_ID);
-      if (isRemoteServer && !process.env.DISPLAY) {
-        console.warn('[SRM] WARNING: Deployed cloud environment detected without a display server.');
-        throw new Error(
-          'Visible browser authentication only works when running the backend locally on your computer. A remote cloud server cannot launch a visible browser window on your personal screen. To check attendance, run the project locally (http://localhost:5173).'
-        );
-      }
+      this.setState('LAUNCHING', `Launching ${useHeadless ? 'headless cloud' : 'visible local'} browser...`);
 
-      console.log('[SRM] Starting browser...');
+      console.log(`[SRM] Starting browser... (Headless: ${useHeadless})`);
       this.browser = await chromium.launch({
-        headless: false, // Visible local browser for student manual authentication
+        headless: useHeadless,
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
@@ -185,16 +185,35 @@ export class PlaywrightSessionManager {
         timeout: 15000
       });
       console.log('[SRM] Login page detected');
-      console.log('[SRM] SRMIST login page loaded');
-
-      this.setState('WAITING_FOR_LOGIN', 'SRMIST login window is open. Please enter credentials.');
-
-      // 5. Start background monitoring asynchronously
-      this.startBackgroundMonitoring(this.sessionId);
+      
+      let returnedStatus: ConnectionState = 'WAITING_FOR_LOGIN';
+      
+      // If headless, we extract CAPTCHA and wait for credentials from frontend
+      if (useHeadless) {
+        console.log('[SRM] Extracting CAPTCHA image for frontend...');
+        try {
+          const captchaElement = await this.page.waitForSelector('img#secure_captcha, img[src*="captcha"]', { timeout: 5000 });
+          const captchaBuffer = await captchaElement.screenshot();
+          this.activeCaptchaBase64 = captchaBuffer.toString('base64');
+          console.log('[SRM] CAPTCHA image extracted successfully');
+          returnedStatus = 'WAITING_FOR_CREDENTIALS';
+          this.setState('WAITING_FOR_CREDENTIALS', 'Waiting for student to provide credentials and CAPTCHA');
+        } catch (e) {
+          console.error('[SRM] Failed to extract CAPTCHA image', e);
+          returnedStatus = 'ERROR';
+          this.setState('ERROR', 'Failed to retrieve CAPTCHA image from SRM portal');
+          await this.cleanup();
+          return { sessionId: this.sessionId, status: 'ERROR' };
+        }
+      } else {
+        this.setState('WAITING_FOR_LOGIN', 'SRMIST login window is open. Please enter credentials.');
+        // 5. Start background monitoring asynchronously since student will interact directly with browser
+        this.startBackgroundMonitoring(this.sessionId, useHeadless);
+      }
 
       return {
         sessionId: this.sessionId,
-        status: 'WAITING_FOR_LOGIN'
+        status: returnedStatus
       };
 
     } catch (error: any) {
@@ -208,18 +227,63 @@ export class PlaywrightSessionManager {
   }
 
   /**
+   * Submits credentials to the headless browser and starts authentication monitoring.
+   */
+  public async submitCredentials(netId: string, pass: string, captchaText: string): Promise<boolean> {
+    if (!this.page || this.page.isClosed() || this.currentState !== 'WAITING_FOR_CREDENTIALS') {
+      throw new Error('No active authentication session awaiting credentials');
+    }
+
+    try {
+      this.setState('AUTHENTICATING', 'Submitting credentials to SRMIST...');
+      
+      // Fill the fields securely
+      await this.page.fill('input#username', netId);
+      await this.page.fill('input#password', pass);
+      await this.page.fill('input#captcha', captchaText);
+      
+      // Click the login button
+      await this.page.click('button#btnLogin, input[type="submit"]');
+      
+      // Start background monitoring for login success/failure
+      // We know it is headless since submitCredentials is only called in WAITING_FOR_CREDENTIALS
+      this.startBackgroundMonitoring(this.sessionId!, true);
+      return true;
+    } catch (error: any) {
+      console.error('[SRM] Failed to submit credentials:', error);
+      this.setState('LOGIN_FAILED', 'Failed to submit credentials to the portal');
+      return false;
+    }
+  }
+
+  /**
    * Continuously monitors the active page for manual login completion, failures, or closure.
    */
-  private async startBackgroundMonitoring(activeSessionId: string) {
+  private async startBackgroundMonitoring(activeSessionId: string, isHeadless: boolean = false) {
     if (!this.page || this.sessionId !== activeSessionId) return;
 
     try {
       const result = await this.detector.monitorAuthentication(this.page, {
         timeoutMs: 600000, // 10 minutes timeout for manual credential, CAPTCHA, and MFA entry
         checkIntervalMs: 1000,
-        onStateChange: (newState: ConnectionState, detail?: string) => {
+        onStateChange: async (newState: ConnectionState, detail?: string) => {
           if (this.sessionId === activeSessionId) {
             this.setState(newState, detail);
+            
+            // If headless and login failed, refresh CAPTCHA so user can retry
+            if (newState === 'LOGIN_FAILED' && isHeadless && this.page) {
+              console.log('[SRM] Login failed in headless mode, refreshing CAPTCHA...');
+              try {
+                // The page has likely reloaded, wait for the new captcha image
+                const captchaElement = await this.page.waitForSelector('img#secure_captcha, img[src*="captcha"]', { timeout: 8000 });
+                const captchaBuffer = await captchaElement.screenshot();
+                this.activeCaptchaBase64 = captchaBuffer.toString('base64');
+                console.log('[SRM] New CAPTCHA image extracted successfully');
+                this.setState('WAITING_FOR_CREDENTIALS', 'Login failed. Please verify your credentials and enter the new CAPTCHA.');
+              } catch (e) {
+                console.error('[SRM] Failed to refresh CAPTCHA image', e);
+              }
+            }
           }
         }
       });

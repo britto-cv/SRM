@@ -75,6 +75,7 @@ export type ConnectionState =
   | 'DISCONNECTED' 
   | 'LAUNCHING' 
   | 'WAITING_FOR_LOGIN' 
+  | 'WAITING_FOR_CREDENTIALS'
   | 'AUTHENTICATING'
   | 'LOGIN_FAILED' 
   | 'AUTHENTICATED' 

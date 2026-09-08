@@ -10,6 +10,7 @@ import { BottomNav } from './components/BottomNav';
 import { SettingsModal } from './components/SettingsModal';
 import { PwaInstallPrompt } from './components/PwaInstallPrompt';
 import { PortalSyncModal } from './components/PortalSyncModal';
+import { CredentialsForm } from './components/CredentialsForm';
 import { apiFetch } from './utils/api';
 import './App.css';
 
@@ -44,6 +45,7 @@ function App() {
   const [activeTab, setActiveTab] = useState<TabType>('health');
   const [showSettings, setShowSettings] = useState(false);
   const [showSyncModal, setShowSyncModal] = useState(false);
+  const [captchaBase64, setCaptchaBase64] = useState<string | null>(null);
   const [targetRefresh, setTargetRefresh] = useState(0);
 
   // Use refs to track current state to avoid stale closures in polling
@@ -108,6 +110,9 @@ function App() {
           if (data.sessionId && !sessionIdRef.current) {
             setSessionId(data.sessionId);
           }
+          if (data.captchaBase64) {
+            setCaptchaBase64(data.captchaBase64);
+          }
           
           if (newState !== appStateRef.current) {
             setAppState(newState);
@@ -158,12 +163,6 @@ function App() {
   };
 
   const handleConnect = async () => {
-    // If on deployed site (e.g. vercel.app), open the 1-Click Portal Sync modal
-    const isDeployed = typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
-    if (isDeployed) {
-      setShowSyncModal(true);
-      return;
-    }
 
     setAppState('LAUNCHING');
     setStatusDetail('Starting secure browser session...');
@@ -350,6 +349,19 @@ function App() {
               <p>Opening local browser for authentication...</p>
             </div>
           </div>
+        )}
+
+        {appState === 'WAITING_FOR_CREDENTIALS' && (
+          <CredentialsForm
+            sessionId={sessionId!}
+            captchaBase64={captchaBase64}
+            statusDetail={statusDetail}
+            onSuccess={() => {
+              setAppState('AUTHENTICATING');
+              setStatusDetail('Submitting credentials to SRMIST...');
+            }}
+            onCancel={handleDisconnect}
+          />
         )}
 
         {(appState === 'WAITING_FOR_LOGIN' || appState === 'AUTHENTICATING' || appState === 'LOGIN_FAILED') && (
