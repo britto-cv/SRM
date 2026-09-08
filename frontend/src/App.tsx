@@ -9,6 +9,7 @@ import type { TabType } from './components/TopNav';
 import { BottomNav } from './components/BottomNav';
 import { SettingsModal } from './components/SettingsModal';
 import { PwaInstallPrompt } from './components/PwaInstallPrompt';
+import { PortalSyncModal } from './components/PortalSyncModal';
 import { apiFetch } from './utils/api';
 import './App.css';
 
@@ -42,6 +43,7 @@ function App() {
   const [isManualMode, setIsManualMode] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('health');
   const [showSettings, setShowSettings] = useState(false);
+  const [showSyncModal, setShowSyncModal] = useState(false);
   const [targetRefresh, setTargetRefresh] = useState(0);
 
   // Use refs to track current state to avoid stale closures in polling
@@ -156,6 +158,13 @@ function App() {
   };
 
   const handleConnect = async () => {
+    // If on deployed site (e.g. vercel.app), open the 1-Click Portal Sync modal
+    const isDeployed = typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+    if (isDeployed) {
+      setShowSyncModal(true);
+      return;
+    }
+
     setAppState('LAUNCHING');
     setStatusDetail('Starting secure browser session...');
     setStudentData(null);
@@ -177,6 +186,9 @@ function App() {
       }
     } catch (err: any) {
       console.error('Failed to initiate connect:', err);
+      if (err.message && err.message.includes('Visible browser authentication')) {
+        setShowSyncModal(true);
+      }
       setStatusDetail(err.message || 'Failed to start browser session');
       setAppState('ERROR');
     }
@@ -246,6 +258,19 @@ function App() {
         />
       )}
       
+      {/* 1-Click Portal Sync Modal for Deployed Website */}
+      <PortalSyncModal
+        isOpen={showSyncModal}
+        onClose={() => setShowSyncModal(false)}
+        onDataLoaded={(data) => {
+          setStudentData(data);
+          setAppState('DATA_READY');
+          setIsManualMode(false);
+          setActiveTab('health');
+          setStatusDetail('Attendance synchronized from SRMIST Portal');
+        }}
+      />
+
       {/* Manual Entry modal */}
       {showManualEntry && (
         <ManualSubjectEntry
@@ -270,8 +295,42 @@ function App() {
         {(appState === 'DISCONNECTED' || appState === 'ERROR' || appState === 'TIMEOUT') && (
           <div>
             {appState === 'ERROR' && statusDetail && (
-              <div style={{ maxWidth: '600px', margin: '1rem auto', padding: '1rem', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', borderRadius: '12px', border: '1px solid rgba(239, 68, 68, 0.2)', textAlign: 'center', fontSize: '0.95rem' }}>
-                <strong>Connection Error:</strong> {statusDetail}
+              <div style={{ maxWidth: '600px', margin: '1rem auto', padding: '1.25rem', background: 'rgba(239, 68, 68, 0.1)', color: '#f87171', borderRadius: '12px', border: '1px solid rgba(239, 68, 68, 0.2)', textAlign: 'center', fontSize: '0.95rem' }}>
+                <p style={{ margin: '0 0 0.75rem 0', fontWeight: 500 }}>{statusDetail}</p>
+                <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+                  <button
+                    onClick={() => setShowSyncModal(true)}
+                    style={{
+                      background: 'linear-gradient(135deg, #3b82f6, #6366f1)',
+                      color: 'white',
+                      border: 'none',
+                      padding: '0.5rem 1.25rem',
+                      borderRadius: '8px',
+                      fontWeight: 600,
+                      fontSize: '0.85rem',
+                      cursor: 'pointer',
+                      boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)',
+                    }}
+                  >
+                    ⚡ Open 1-Click Portal Sync
+                  </button>
+                  <a
+                    href="http://localhost:5173"
+                    style={{
+                      display: 'inline-block',
+                      background: 'rgba(255, 255, 255, 0.1)',
+                      color: '#e2e8f0',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      padding: '0.5rem 1.25rem',
+                      borderRadius: '8px',
+                      fontWeight: 500,
+                      fontSize: '0.85rem',
+                      textDecoration: 'none',
+                    }}
+                  >
+                    Run Local App (localhost:5173) ↗
+                  </a>
+                </div>
               </div>
             )}
             {appState === 'TIMEOUT' && (
