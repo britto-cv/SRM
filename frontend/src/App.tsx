@@ -64,6 +64,31 @@ function App() {
     }
   }, []);
 
+  // Check for 1-Click Portal Sync payload in URL hash
+  useEffect(() => {
+    if (window.location.hash && window.location.hash.includes('srm_data=')) {
+      try {
+        const hash = window.location.hash.substring(1);
+        const params = new URLSearchParams(hash);
+        const rawData = params.get('srm_data');
+        if (rawData) {
+          const parsed = JSON.parse(decodeURIComponent(rawData));
+          if (parsed && parsed.subjects && parsed.attendance) {
+            setStudentData(parsed);
+            setAppState('DATA_READY');
+            setIsManualMode(false);
+            setActiveTab('health');
+            setStatusDetail('Attendance synchronized from SRMIST Portal');
+            // Clean up the URL hash immediately to prevent leaking in history
+            window.history.replaceState(null, '', window.location.pathname);
+          }
+        }
+      } catch (e) {
+        console.error('Failed to parse synchronized data from URL:', e);
+      }
+    }
+  }, []);
+
   // Polling logic for auth state
   useEffect(() => {
     let timeoutId: any;
