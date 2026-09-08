@@ -12,38 +12,31 @@ export interface AuthenticationDetectorOptions {
 export class AuthenticationDetector {
   private lastAlertMessage: string | null = null;
   private currentAuthState: ConnectionState = 'WAITING_FOR_LOGIN';
+  private dialogListenerAttached: boolean = false;
 
   /**
    * Attaches dialog and event listeners to the Page to capture native alert popups
    * commonly used by the legacy SRMIST portal (e.g., "Invalid User Name or Password").
    */
-  public attachPageListeners(page: Page, onStateChange: (state: ConnectionState, detail?: string) => void): void {
+  public attachPageListeners(page: Page, updateState: (state: ConnectionState, detail?: string) => void): void {
+    if (this.dialogListenerAttached) return;
+
     page.on('dialog', async (dialog: Dialog) => {
-      const message = dialog.message();
+      const message = dialog.message() || '';
       this.lastAlertMessage = message;
       console.log(`[SRM] Login alert dialog detected: "${message}"`);
       
-      const lower = message.toLowerCase();
-      if (
-        lower.includes('invalid') || 
-        lower.includes('wrong') || 
-        lower.includes('incorrect') || 
-        lower.includes('captcha') || 
-        lower.includes('password') ||
-        lower.includes('user name')
-      ) {
-        this.currentAuthState = 'LOGIN_FAILED';
-        onStateChange('LOGIN_FAILED', message);
-      }
+      this.currentAuthState = 'LOGIN_FAILED';
+      updateState('LOGIN_FAILED', message);
       
       // Dismiss dialog so it doesn't freeze the page or prevent the user from re-entering
-      await dialog.accept().catch(() => {});
+      await dialog.dismiss().catch(() => {});
     });
 
     page.on('crash', () => {
       console.error('[SRM] Page crashed during authentication session');
       this.currentAuthState = 'ERROR';
-      onStateChange('ERROR', 'Page crashed');
+      updateState('ERROR', 'Page crashed');
     });
   }
 

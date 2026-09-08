@@ -87,9 +87,13 @@ function App() {
             window.history.replaceState(null, '', window.location.pathname);
           }
         }
-      } catch (e) {
-        console.error('Failed to parse synchronized data from URL:', e);
+      } catch (err) {
+        console.error('Failed to parse student data from URL:', err);
+        window.history.replaceState(null, '', window.location.pathname);
       }
+    } else {
+      // Auto-connect if there is no data in URL hash
+      handleConnect();
     }
   }, []);
 
@@ -388,7 +392,7 @@ function App() {
               )}
               {appState === 'LOGIN_FAILED' && (
                 <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
-                  <strong>Invalid credentials detected.</strong> Please check your NetID, password, or CAPTCHA in the open browser window.
+                  <strong>Invalid credentials detected.</strong> Please check your NetID, password, or CAPTCHA.
                 </div>
               )}
             </div>
