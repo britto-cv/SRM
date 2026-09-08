@@ -3,7 +3,7 @@ services:
     name: srm-backend
     env: node
     plan: free
-    buildCommand: npm install && npm run build
+    buildCommand: npm install && npx playwright install chromium && npm run build
     startCommand: npm start
     envVars:
       - key: NODE_ENV

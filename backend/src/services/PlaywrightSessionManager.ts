@@ -118,7 +118,10 @@ export class PlaywrightSessionManager {
       // Verify display capability for local headed launch
       const isRemoteServer = !!(process.env.RENDER || process.env.RAILWAY_ENVIRONMENT || process.env.VERCEL || process.env.FLY_ALLOC_ID);
       if (isRemoteServer && !process.env.DISPLAY) {
-        console.warn('[SRM] WARNING: Deployed environment detected without display server! Visible browser cannot open on client machine.');
+        console.warn('[SRM] WARNING: Deployed cloud environment detected without a display server.');
+        throw new Error(
+          'Visible browser authentication only works when running the backend locally on your computer. A remote cloud server cannot launch a visible browser window on your personal screen. To check attendance, run the project locally (http://localhost:5173).'
+        );
       }
 
       console.log('[SRM] Starting browser...');
