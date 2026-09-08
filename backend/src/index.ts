@@ -3,6 +3,7 @@ import cors from 'cors';
 import type { NormalizedStudentData } from '@srm/shared';
 import connectionRoutes from './routes/connectionRoutes';
 import { sessionManager } from './services/PlaywrightSessionManager';
+import { verifyPlaywrightInstallation } from './PlaywrightHealthCheck';
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -36,20 +37,28 @@ app.get('/api/dummy-data', (req: Request, res: Response) => {
   res.json(dummyData);
 });
 
-const server = app.listen(port, () => {
-  console.log(`[SRM] Node process started (PID: ${process.pid})`);
-  console.log(`[SRM] Backend service listening at http://localhost:${port}`);
-});
+// Only start the server if Playwright is healthy
+verifyPlaywrightInstallation().then((isHealthy) => {
+  if (!isHealthy) {
+    console.error('[SRM] Server startup aborted due to missing Playwright Chromium installation.');
+    process.exit(1);
+  }
 
-// Defensive Cleanup on Process Shutdown
-const shutdown = async (signal: string) => {
-  console.log(`\nReceived ${signal}. Shutting down securely...`);
-  await sessionManager.cleanup();
-  server.close(() => {
-    console.log('HTTP server closed.');
-    process.exit(0);
+  const server = app.listen(port, () => {
+    console.log(`[SRM] Node process started (PID: ${process.pid})`);
+    console.log(`[SRM] Backend service listening at http://localhost:${port}`);
   });
-};
 
-process.on('SIGINT', () => shutdown('SIGINT'));
-process.on('SIGTERM', () => shutdown('SIGTERM'));
+  // Defensive Cleanup on Process Shutdown
+  const shutdown = async (signal: string) => {
+    console.log(`\nReceived ${signal}. Shutting down securely...`);
+    await sessionManager.cleanup();
+    server.close(() => {
+      console.log('HTTP server closed.');
+      process.exit(0);
+    });
+  };
+
+  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+});

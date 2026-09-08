@@ -188,7 +188,13 @@ function App() {
       if (err.message && err.message.includes('Visible browser authentication')) {
         setShowSyncModal(true);
       }
-      setStatusDetail(err.message || 'Failed to start browser session');
+      
+      let errorMsg = err.message || 'Failed to start browser session';
+      if (errorMsg.includes('Failed to fetch') || errorMsg.includes('NetworkError')) {
+        errorMsg = 'Attendance service is temporarily unavailable. Please try again shortly.';
+      }
+      
+      setStatusDetail(errorMsg);
       setAppState('ERROR');
     }
   };
