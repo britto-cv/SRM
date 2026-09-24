@@ -14,6 +14,18 @@ import { CredentialsForm } from './components/CredentialsForm';
 import { apiFetch } from './utils/api';
 import './App.css';
 
+// Every state here needs status polling. In particular, a deployed backend
+// returns WAITING_FOR_CREDENTIALS after it has captured the CAPTCHA image.
+const POLLING_STATES: ConnectionState[] = [
+  'LAUNCHING',
+  'WAITING_FOR_LOGIN',
+  'WAITING_FOR_CREDENTIALS',
+  'AUTHENTICATING',
+  'LOGIN_FAILED',
+  'AUTHENTICATED',
+  'EXTRACTING',
+];
+
 /** Build a NormalizedStudentData from manually entered subjects */
 function buildManualStudentData(subjects: ManualSubject[]): NormalizedStudentData {
   return {
@@ -131,12 +143,12 @@ function App() {
       }
       
       // Continue polling if in active connection lifecycle
-      if (['LAUNCHING', 'WAITING_FOR_LOGIN', 'AUTHENTICATING', 'LOGIN_FAILED', 'AUTHENTICATED', 'EXTRACTING'].includes(appStateRef.current)) {
+      if (POLLING_STATES.includes(appStateRef.current)) {
         timeoutId = setTimeout(pollStatus, 1200);
       }
     };
 
-    if (['LAUNCHING', 'WAITING_FOR_LOGIN', 'AUTHENTICATING', 'LOGIN_FAILED', 'AUTHENTICATED', 'EXTRACTING'].includes(appState)) {
+    if (POLLING_STATES.includes(appState)) {
       timeoutId = setTimeout(pollStatus, 1200);
     }
 

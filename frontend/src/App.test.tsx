@@ -1,35 +1,54 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { act, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 
-describe('App Integration', () => {
-  it('renders DISCONNECTED state with Connect button', () => {
-    render(<App />);
-    expect(screen.getByText(/Bunk Pannalama/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Check My Attendance/i })).toBeInTheDocument();
+const response = (data: unknown) => ({
+  ok: true,
+  json: async () => data,
+});
+
+describe('App connection flow', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
-  it('transitions to LAUNCHING state on click', async () => {
-    // Mock fetch for the connect endpoint
-    window.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ status: 'initiated' })
-    });
+  it('shows the deployed credential form after a cloud connection starts', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response({
+      status: 'WAITING_FOR_CREDENTIALS',
+      sessionId: 'session-1',
+    })));
 
     render(<App />);
-    const btn = screen.getByRole('button', { name: /Check My Attendance/i });
-    fireEvent.click(btn);
-    
-    await waitFor(() => {
-      expect(screen.getByText(/Opening local browser for authentication\.\.\./i)).toBeInTheDocument();
-      expect(screen.getByText(/Starting secure browser session\.\.\./i)).toBeInTheDocument();
-    });
+    expect(await screen.findByRole('heading', { name: 'Connect to SRM' })).toBeInTheDocument();
+    expect(screen.getByLabelText('NetID')).toBeInTheDocument();
   });
 
-  it('renders LOGIN_FAILED state correctly', () => {
-    // Mock the state returned by polling, but for unit tests we can't easily mock polling without useEffect triggers.
-    // We will just test if EmptyState handles TIMEOUT and connecting handles LOGIN_FAILED
-    // To do this simply, we should probably extract the component logic or just trust the visual output if we force state.
-    // We can't force state easily, so let's mock fetch to return LOGIN_FAILED on status poll.
+  it('polls for and displays the CAPTCHA while waiting for credentials', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response({ status: 'WAITING_FOR_CREDENTIALS', sessionId: 'session-1' }))
+      .mockResolvedValueOnce(response({
+        state: 'WAITING_FOR_CREDENTIALS',
+        sessionId: 'session-1',
+        captchaBase64: 'captcha-image',
+      }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByRole('heading', { name: 'Connect to SRM' })).toBeInTheDocument();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1200);
+    });
+
+    expect(screen.getByAltText('CAPTCHA')).toHaveAttribute(
+      'src',
+      'data:image/jpeg;base64,captcha-image',
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

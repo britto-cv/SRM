@@ -88,10 +88,11 @@ export const CredentialsForm: React.FC<CredentialsFormProps> = ({
 
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
         <div>
-          <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
+          <label htmlFor="net-id" style={{ display: 'block', fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
             NetID
           </label>
           <input
+            id="net-id"
             type="text"
             value={netId}
             onChange={(e) => setNetId(e.target.value)}
@@ -112,10 +113,11 @@ export const CredentialsForm: React.FC<CredentialsFormProps> = ({
         </div>
 
         <div>
-          <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
+          <label htmlFor="password" style={{ display: 'block', fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
             Password
           </label>
           <input
+            id="password"
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -135,7 +137,7 @@ export const CredentialsForm: React.FC<CredentialsFormProps> = ({
         </div>
 
         <div>
-          <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
+          <label htmlFor="captcha" style={{ display: 'block', fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
             CAPTCHA
           </label>
           <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', marginBottom: '0.75rem' }}>
@@ -152,6 +154,7 @@ export const CredentialsForm: React.FC<CredentialsFormProps> = ({
             )}
           </div>
           <input
+            id="captcha"
             type="text"
             value={captcha}
             onChange={(e) => setCaptcha(e.target.value)}
