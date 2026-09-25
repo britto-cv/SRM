@@ -28,6 +28,27 @@ export const PortalSyncModal: React.FC<PortalSyncModalProps> = ({ isOpen, onClos
       const subjects: any[] = [];
       const attendance: any[] = [];
 
+      const addAttendanceRow = (code: string, name: string, conducted: number, attended: number) => {
+        if (
+          !code ||
+          code.toLowerCase().includes('total') ||
+          code.includes('/') ||
+          !Number.isFinite(conducted) ||
+          !Number.isFinite(attended) ||
+          conducted <= 0
+        ) {
+          return;
+        }
+
+        subjects.push({ code, name: name || code, credits: 3 });
+        attendance.push({
+          subjectCode: code,
+          conductedHours: conducted,
+          attendedHours: attended,
+          percentage: (attended / conducted) * 100,
+        });
+      };
+
       rows.forEach(r => {
         const c = r.querySelectorAll('td');
         if (c.length >= 6) {
@@ -35,20 +56,27 @@ export const PortalSyncModal: React.FC<PortalSyncModalProps> = ({ isOpen, onClos
           const name = c[1]?.textContent?.trim() || '';
           const maxH = parseInt(c[2]?.textContent?.trim() || '0', 10);
           const attH = parseInt(c[3]?.textContent?.trim() || '0', 10);
-          if (code && !code.toLowerCase().includes('total') && !code.includes('/') && !isNaN(maxH) && maxH > 0) {
-            subjects.push({ code, name, credits: 3 });
-            attendance.push({
-              subjectCode: code,
-              conductedHours: maxH,
-              attendedHours: attH,
-              percentage: (attH / maxH) * 100,
-            });
-          }
+          addAttendanceRow(code, name, maxH, attH);
         }
       });
 
+      // Browser copy uses tab-separated plain text in many SRM portal views;
+      // DOMParser has no <td> elements in that case. Support both formats.
       if (subjects.length === 0) {
-        throw new Error('No attendance rows found in pasted text. Make sure you copied the Attendance Details table.');
+        pastedHtml.split(/\r?\n/).forEach(line => {
+          const cells = line.split('\t').map(value => value.trim()).filter(Boolean);
+          if (cells.length < 4) return;
+
+          const code = cells[0];
+          const name = cells[1];
+          const conducted = Number.parseInt(cells[2], 10);
+          const attended = Number.parseInt(cells[3], 10);
+          addAttendanceRow(code, name, conducted, attended);
+        });
+      }
+
+      if (subjects.length === 0) {
+        throw new Error('No attendance rows found. Copy the full Attendance Details table, including the subject-code and hour columns.');
       }
 
       const normalized: NormalizedStudentData = {
@@ -201,7 +229,7 @@ export const PortalSyncModal: React.FC<PortalSyncModalProps> = ({ isOpen, onClos
         {activeTab === 'paste' && (
           <div>
             <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.85rem', color: '#94a3b8' }}>
-              Copy the attendance table from the SRM portal (or press Ctrl+A / Cmd+A on the attendance page) and paste it below:
+              Copy the attendance table from the SRM portal (or press Ctrl+A / Cmd+A on the attendance page) and paste it below. Both HTML and normal copied table text are supported:
             </p>
             <textarea
               value={pastedHtml}
