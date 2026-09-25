@@ -7,6 +7,7 @@ interface CredentialsFormProps {
   statusDetail: string | null;
   onSuccess: () => void;
   onCancel: () => void;
+  onOpenSync?: () => void;
 }
 
 export const CredentialsForm: React.FC<CredentialsFormProps> = ({ 
@@ -14,7 +15,8 @@ export const CredentialsForm: React.FC<CredentialsFormProps> = ({
   captchaBase64, 
   statusDetail,
   onSuccess,
-  onCancel
+  onCancel,
+  onOpenSync
 }) => {
   const [netId, setNetId] = useState('');
   const [password, setPassword] = useState('');
@@ -244,6 +246,26 @@ export const CredentialsForm: React.FC<CredentialsFormProps> = ({
         <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textAlign: 'center', marginTop: '0.5rem', lineHeight: 1.4 }}>
           Credentials are sent securely to proxy your login.<br/>They are <strong>never stored</strong> in any database.
         </p>
+
+        {onOpenSync && (
+          <div style={{ textAlign: 'center', marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+            <button
+              type="button"
+              onClick={onOpenSync}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#60a5fa',
+                fontSize: '0.8rem',
+                cursor: 'pointer',
+                fontWeight: 500,
+                textDecoration: 'underline'
+              }}
+            >
+              ⚡ Prefer to log in directly on SRM? Use 1-Click Sync ↗
+            </button>
+          </div>
+        )}
       </form>
     </div>
   );

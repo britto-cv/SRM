@@ -364,7 +364,7 @@ function App() {
                 <strong>Session Timed Out:</strong> Login window remained open without authentication for 10 minutes.
               </div>
             )}
-            <LandingPage onStartPlanning={handleManualEdit} onConnect={handleConnect} />
+            <LandingPage onStartPlanning={handleManualEdit} onConnect={handleConnect} onOpenSync={() => setShowSyncModal(true)} />
           </div>
         )}
 
@@ -383,7 +383,7 @@ function App() {
 
         {appState === 'WAITING_FOR_CREDENTIALS' && (
           <CredentialsForm
-            sessionId={sessionId!}
+            sessionId={sessionId || ''}
             captchaBase64={captchaBase64}
             statusDetail={statusDetail}
             onSuccess={() => {
@@ -391,6 +391,7 @@ function App() {
               setStatusDetail('Submitting credentials to SRMIST...');
             }}
             onCancel={handleDisconnect}
+            onOpenSync={() => setShowSyncModal(true)}
           />
         )}
 
@@ -454,7 +455,7 @@ function App() {
           </div>
         )}
 
-        {appState === 'DATA_READY' && studentData && (
+        {appState === 'DATA_READY' && studentData ? (
           <div>
             {/* Manual mode header banner */}
             {isManualMode && (
@@ -474,7 +475,15 @@ function App() {
               onTabChange={setActiveTab}
             />
           </div>
-        )}
+        ) : appState === 'DATA_READY' && !studentData ? (
+          <div className="empty-state connecting">
+            <div className="spinner"></div>
+            <h2>Loading academic data...</h2>
+            <div style={{ marginTop: '1rem', color: 'var(--text-muted)' }}>
+              <p>Fetching your attendance records from the session...</p>
+            </div>
+          </div>
+        ) : null}
       </main>
 
       <BottomNav 

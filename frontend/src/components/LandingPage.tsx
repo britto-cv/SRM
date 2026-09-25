@@ -3,9 +3,10 @@ import React, { useEffect, useState } from 'react';
 interface LandingPageProps {
   onStartPlanning: () => void;
   onConnect: () => void;
+  onOpenSync?: () => void;
 }
 
-export const LandingPage: React.FC<LandingPageProps> = ({ onStartPlanning, onConnect }) => {
+export const LandingPage: React.FC<LandingPageProps> = ({ onStartPlanning, onConnect, onOpenSync }) => {
   const [mounted, setMounted] = useState(false);
   
   // Mockup Interactive State
@@ -160,18 +161,18 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartPlanning, onCon
           <div style={{
             display: 'flex',
             flexWrap: 'wrap',
-            gap: '1rem',
+            gap: '0.75rem',
             marginTop: '1rem'
           }}>
             <button 
-              onClick={onStartPlanning}
+              onClick={onConnect}
               style={{
                 background: 'var(--primary)',
                 color: 'white',
                 border: 'none',
-                padding: '0.85rem 2rem',
+                padding: '0.85rem 1.75rem',
                 borderRadius: '8px',
-                fontSize: '1rem',
+                fontSize: '0.95rem',
                 fontWeight: 600,
                 cursor: 'pointer',
                 boxShadow: '0 4px 14px 0 rgba(59, 130, 246, 0.39)',
@@ -186,18 +187,47 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartPlanning, onCon
                 e.currentTarget.style.boxShadow = '0 4px 14px 0 rgba(59, 130, 246, 0.39)';
               }}
             >
-              Start Planning
+              Check My Attendance
             </button>
+            {onOpenSync && (
+              <button 
+                onClick={onOpenSync}
+                style={{
+                  background: 'rgba(59, 130, 246, 0.1)',
+                  color: '#60a5fa',
+                  border: '1px solid rgba(59, 130, 246, 0.3)',
+                  padding: '0.85rem 1.5rem',
+                  borderRadius: '8px',
+                  fontSize: '0.95rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  transition: 'background 0.2s ease, border-color 0.2s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(59, 130, 246, 0.2)';
+                  e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.5)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(59, 130, 246, 0.1)';
+                  e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.3)';
+                }}
+              >
+                ⚡ 1-Click Portal Sync
+              </button>
+            )}
             <button 
-              onClick={onConnect}
+              onClick={onStartPlanning}
               style={{
                 background: 'rgba(255, 255, 255, 0.05)',
-                color: 'var(--text-main)',
+                color: 'var(--text-muted)',
                 border: '1px solid rgba(255, 255, 255, 0.1)',
-                padding: '0.85rem 2rem',
+                padding: '0.85rem 1.5rem',
                 borderRadius: '8px',
-                fontSize: '1rem',
-                fontWeight: 600,
+                fontSize: '0.95rem',
+                fontWeight: 500,
                 cursor: 'pointer',
                 transition: 'background 0.2s ease, border-color 0.2s ease'
               }}
@@ -210,7 +240,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartPlanning, onCon
                 e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)';
               }}
             >
-              Check My Attendance
+              Manual Mode
             </button>
           </div>
         </div>
