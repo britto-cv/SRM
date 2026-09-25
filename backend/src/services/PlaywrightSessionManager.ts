@@ -244,7 +244,7 @@ export class PlaywrightSessionManager {
    * Submits credentials to the headless browser and starts authentication monitoring.
    */
   public async submitCredentials(netId: string, pass: string, captchaText: string): Promise<boolean> {
-    if (!this.page || this.page.isClosed() || this.currentState !== 'WAITING_FOR_CREDENTIALS') {
+    if (!this.page || this.page.isClosed() || (this.currentState !== 'WAITING_FOR_CREDENTIALS' && this.currentState !== 'LOGIN_FAILED')) {
       throw new Error('No active authentication session awaiting credentials');
     }
 
@@ -259,6 +259,9 @@ export class PlaywrightSessionManager {
       // Click specifically the login button (#btnLogin), avoiding #btnRefresh
       await this.page.click('#btnLogin, button#btnLogin');
       
+      // Reset monitoring flag in case previous iteration is unwinding
+      this.isMonitoring = false;
+
       // Start background monitoring for login success/failure
       // We know it is headless since submitCredentials is only called in WAITING_FOR_CREDENTIALS
       this.startBackgroundMonitoring(this.sessionId!, true);
@@ -281,6 +284,7 @@ export class PlaywrightSessionManager {
       const result = await this.detector.monitorAuthentication(this.page, {
         timeoutMs: 600000, // 10 minutes timeout for manual credential, CAPTCHA, and MFA entry
         checkIntervalMs: 1000,
+        isHeadless,
         onStateChange: async (newState: ConnectionState, detail?: string) => {
           if (this.sessionId === activeSessionId) {
             this.setState(newState, detail);
@@ -332,6 +336,11 @@ export class PlaywrightSessionManager {
         } else {
           throw new Error('Portal data adapter returned empty academic data');
         }
+
+      } else if (result === 'LOGIN_FAILED') {
+        console.log('[SRM] Headless login failed; awaiting next credentials submission.');
+        // Do not cleanup or set to ERROR. onStateChange has already refreshed the CAPTCHA and set WAITING_FOR_CREDENTIALS.
+        return;
 
       } else if (result === 'DISCONNECTED') {
         console.log('[SRM] Session terminated because browser was closed');

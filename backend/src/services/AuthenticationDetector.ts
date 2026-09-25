@@ -1,11 +1,12 @@
 import { Page, Dialog } from 'playwright';
 import { ConnectionState } from '@srm/shared';
 
-export type AuthDetectionResult = 'AUTHENTICATED' | 'DISCONNECTED' | 'TIMEOUT' | 'ERROR';
+export type AuthDetectionResult = 'AUTHENTICATED' | 'DISCONNECTED' | 'TIMEOUT' | 'ERROR' | 'LOGIN_FAILED';
 
 export interface AuthenticationDetectorOptions {
   timeoutMs?: number;
   checkIntervalMs?: number;
+  isHeadless?: boolean;
   onStateChange: (state: ConnectionState, detail?: string) => void;
 }
 
@@ -62,6 +63,8 @@ export class AuthenticationDetector {
     let timeoutMs = 600000; // 10 minutes default
     let checkIntervalMs = 1000;
     let onStateChange: (state: ConnectionState, detail?: string) => void;
+
+    const isHeadless = typeof optionsOrTimeout === 'object' ? !!optionsOrTimeout.isHeadless : false;
 
     if (typeof optionsOrTimeout === 'number') {
       timeoutMs = optionsOrTimeout;
@@ -151,17 +154,18 @@ export class AuthenticationDetector {
         // Signal A: URL moved away from login page to known student portal paths
         const isUrlAuthenticated = 
           currentUrl.includes('sp.srmist.edu.in') &&
-          !currentUrl.includes('loginManager') &&
           !currentUrl.includes('youLogin.jsp') &&
           !currentUrl.includes('LoginServlet') &&
           (
+            currentUrl.includes('UserHomePage.jsp') ||
+            currentUrl.includes('HRDSystem.jsp') ||
             currentUrl.includes('studentDetails.jsp') ||
             currentUrl.includes('template') ||
             currentUrl.includes('student_dashboard') ||
             currentUrl.includes('report') ||
             currentUrl.includes('welcome.jsp') ||
             currentUrl.includes('home.jsp') ||
-            currentUrl.includes('/students/')
+            (currentUrl.includes('/students/') && !currentUrl.includes('youLogin.jsp'))
           );
 
         if (domSignals) {
@@ -170,6 +174,9 @@ export class AuthenticationDetector {
             const failReason = domSignals.invalidText || 'Invalid credentials or CAPTCHA entered';
             console.log(`[SRM] Login failure detected on page: ${failReason}`);
             updateState('LOGIN_FAILED', failReason);
+            if (isHeadless) {
+              return 'LOGIN_FAILED';
+            }
             await new Promise(resolve => setTimeout(resolve, checkIntervalMs));
             continue;
           }
@@ -177,7 +184,9 @@ export class AuthenticationDetector {
           // Check if any strong authentication signal is satisfied
           let authDetectionReason: string | null = null;
 
-          if (isUrlAuthenticated && (domSignals.hasStudentName || domSignals.hasRegisterNo || domSignals.hasNavLists || domSignals.hasLogout)) {
+          if (currentUrl.includes('UserHomePage.jsp')) {
+            authDetectionReason = `Reached SRMIST UserHomePage.jsp: ${currentUrl}`;
+          } else if (isUrlAuthenticated && (domSignals.hasStudentName || domSignals.hasRegisterNo || domSignals.hasNavLists || domSignals.hasLogout)) {
             authDetectionReason = `URL changed to ${currentUrl} and student dashboard markers verified`;
           } else if (domSignals.hasNavLists) {
             authDetectionReason = `Found authenticated portal navigation items (#listId7 / #listId9)`;

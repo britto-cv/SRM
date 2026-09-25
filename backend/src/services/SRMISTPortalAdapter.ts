@@ -70,11 +70,14 @@ export class SRMISTPortalAdapter {
   private async extractDashboardProfile(page: Page): Promise<{ name: string; id: string; program: string; department: string; email?: string; registerNumber?: string; semester?: string; institution?: string; status?: string; imageUrl?: string; }> {
     return page.evaluate(() => {
       const getVal = (label: string) => {
-        const td = Array.from(document.querySelectorAll('td')).find(el => el.textContent?.trim() === label);
+        const td = Array.from(document.querySelectorAll('td')).find(el => {
+          const text = (el.textContent || '').trim().replace(/\s+/g, ' ').toLowerCase();
+          return text === label.toLowerCase() || text.startsWith(label.toLowerCase());
+        });
         return td?.nextElementSibling?.textContent?.trim() || 'Unknown';
       };
       
-      const registerNumber = getVal('Register No.');
+      const registerNumber = getVal('Register No');
       const semester = getVal('Semester');
       const institution = getVal('Institution');
       
@@ -119,13 +122,30 @@ export class SRMISTPortalAdapter {
 
   private async navigateToForm(page: Page, formId: number): Promise<void> {
     try {
-      console.log(`[Adapter] Clicking menu item #listId${formId}...`);
-      await page.click(`#listId${formId}`);
+      console.log(`[Adapter] Navigating to formId ${formId}...`);
+      const evaluated = await page.evaluate((id) => {
+        if (typeof (window as any).funSetFormId === 'function') {
+          (window as any).funSetFormId(id);
+          return true;
+        }
+        const el = document.getElementById(`listId${id}`) || document.querySelector(`[onclick*="funSetFormId(${id})"]`);
+        if (el) {
+          (el as HTMLElement).click();
+          return true;
+        }
+        return false;
+      }, formId).catch(() => false);
+
+      if (!evaluated) {
+        console.log(`[Adapter] Fallback clicking #listId${formId}...`);
+        await page.click(`#listId${formId}, [onclick*="funSetFormId(${formId})"]`, { timeout: 5000 }).catch(() => {});
+      }
+
       // Wait for DOM load or target table to render
       await Promise.race([
-        page.waitForSelector('table.table, tbody tr', { timeout: 10000 }),
-        page.waitForLoadState('domcontentloaded', { timeout: 10000 }),
-        page.waitForTimeout(3000)
+        page.waitForSelector('table.table, tbody tr', { timeout: 12000 }),
+        page.waitForLoadState('domcontentloaded', { timeout: 12000 }),
+        page.waitForTimeout(4000)
       ]).catch(() => {});
     } catch (e: any) {
       console.warn(`[Adapter] Warning navigating to form ${formId}:`, e.message);

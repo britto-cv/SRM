@@ -421,6 +421,23 @@ function App() {
                   {sessionId ? ' Updating CAPTCHA...' : ' Please check your NetID, password, or CAPTCHA.'}
                 </div>
               )}
+              <div style={{ marginTop: '1.25rem', display: 'flex', justifyContent: 'center', gap: '1rem' }}>
+                <button
+                  type="button"
+                  onClick={handleDisconnect}
+                  style={{
+                    background: 'transparent',
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    color: 'var(--text-muted)',
+                    padding: '0.4rem 1rem',
+                    borderRadius: '6px',
+                    fontSize: '0.8rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel / Retry
+                </button>
+              </div>
             </div>
           </div>
         )}
