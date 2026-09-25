@@ -167,6 +167,17 @@ export class PlaywrightSessionManager {
       this.page = await this.context.newPage();
       console.log('[SRM] Page created');
 
+      // Intercept window.alert() dialogs from SRM portal (used for "Invalid credentials" errors)
+      this.page.on('dialog', async (dialog) => {
+        const msg = dialog.message();
+        console.log(`[SRM] Portal dialog: "${msg}"`);
+        await dialog.dismiss().catch(() => {});
+        if (/invalid|wrong|incorrect|failed|mismatch|captcha|password|credentials/i.test(msg)) {
+          // Trigger LOGIN_FAILED so the monitor loop restarts the CAPTCHA refresh
+          this.setState('LOGIN_FAILED', msg);
+        }
+      });
+
       // Listen for unexpected page close or crash
       this.page.on('close', () => {
         console.log('[SRM] Page close event received');
@@ -264,33 +275,56 @@ export class PlaywrightSessionManager {
   /**
    * Submits credentials to the headless browser and starts authentication monitoring.
    */
-  public async submitCredentials(netId: string, pass: string, captchaText: string): Promise<boolean> {
+  public async submitCredentials(netId: string, pass: string, _userCaptcha?: string): Promise<boolean> {
     if (!this.page || this.page.isClosed() || (this.currentState !== 'WAITING_FOR_CREDENTIALS' && this.currentState !== 'LOGIN_FAILED')) {
       throw new Error('No active authentication session awaiting credentials');
     }
 
     try {
       this.setState('AUTHENTICATING', 'Submitting credentials to SRMIST...');
-      
-      // Ensure fields are properly focused and filled with real input events
+
+      // ── Step 1: Read the CAPTCHA answer directly from the page ───────────────
+      // SRM embeds the expected CAPTCHA text in window.SECURE_CONFIG.captchaText,
+      // so we never need the user to read/type the image.
+      const autoCaptcha = await this.page.evaluate(() => {
+        return (window as any).SECURE_CONFIG?.captchaText || '';
+      }).catch(() => '');
+
+      if (!autoCaptcha) {
+        console.warn('[SRM] Could not read SECURE_CONFIG.captchaText – refreshing page for a fresh CAPTCHA');
+        await this.page.reload({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+        await this.page.waitForSelector('input#captcha', { timeout: 8000 }).catch(() => {});
+      }
+
+      const captchaText = autoCaptcha || _userCaptcha || '';
+      console.log(`[SRM] CAPTCHA auto-read: "${captchaText}"`);
+
+      // ── Step 2: Simulate human-like interaction timing ───────────────────────
+      await this.page.waitForTimeout(300 + Math.floor(Math.random() * 400));
+
+      // ── Step 3: Fill credentials with real input events ──────────────────────
       await this.page.click('input#username');
       await this.page.fill('input#username', netId);
       await this.page.dispatchEvent('input#username', 'input');
       await this.page.dispatchEvent('input#username', 'change');
+      await this.page.waitForTimeout(200 + Math.floor(Math.random() * 300));
 
       await this.page.click('input#password');
       await this.page.fill('input#password', pass);
       await this.page.dispatchEvent('input#password', 'input');
       await this.page.dispatchEvent('input#password', 'change');
+      await this.page.waitForTimeout(200 + Math.floor(Math.random() * 300));
 
       await this.page.click('input#captcha');
       await this.page.fill('input#captcha', captchaText);
       await this.page.dispatchEvent('input#captcha', 'input');
       await this.page.dispatchEvent('input#captcha', 'change');
+      await this.page.waitForTimeout(150 + Math.floor(Math.random() * 200));
 
-      // Re-apply telemetry wrapper right before submit so anti-bot telemetry in telemetry.js passes
+      // ── Step 4: Patch telemetry payload with human-like metrics ──────────────
       await this.page.evaluate(() => {
         try {
+          // Patch secureTelemetry / getTelemetryPayload if present
           if (typeof (window as any).getTelemetryPayload === 'function' && !(window as any)._telemetryWrapped) {
             (window as any)._telemetryWrapped = true;
             const orig = (window as any).getTelemetryPayload;
@@ -298,11 +332,7 @@ export class PlaywrightSessionManager {
               try {
                 const encoded = orig();
                 let decoded = '';
-                try {
-                  decoded = decodeURIComponent(atob(encoded));
-                } catch {
-                  decoded = atob(encoded);
-                }
+                try { decoded = decodeURIComponent(atob(encoded)); } catch { decoded = atob(encoded); }
                 const data = JSON.parse(decoded);
                 data.webdriver = false;
                 data.keystrokeCount = Math.floor(Math.random() * 15) + 25;
@@ -311,22 +341,23 @@ export class PlaywrightSessionManager {
                 data.typingSpeedMs = Math.floor(Math.random() * 1500) + 3200;
                 data.timeOnPageMs = Math.floor(Math.random() * 2000) + 4500;
                 return btoa(encodeURIComponent(JSON.stringify(data)));
-              } catch (e) {
-                return orig();
-              }
+              } catch (e) { return orig(); }
             };
+          }
+          // Also increment the interaction counter that guardlogin.js checks
+          if (typeof (window as any).recordInteraction === 'function') {
+            for (let i = 0; i < 5; i++) (window as any).recordInteraction();
           }
         } catch {}
       }).catch(() => {});
-      
-      // Click specifically the login button (#btnLogin), avoiding #btnRefresh
+
+      // ── Step 5: Submit form ───────────────────────────────────────────────────
       await this.page.click('#btnLogin, button#btnLogin');
       
       // Reset monitoring flag in case previous iteration is unwinding
       this.isMonitoring = false;
 
       // Start background monitoring for login success/failure
-      // We know it is headless since submitCredentials is only called in WAITING_FOR_CREDENTIALS
       this.startBackgroundMonitoring(this.sessionId!, true);
       return true;
     } catch (error: any) {

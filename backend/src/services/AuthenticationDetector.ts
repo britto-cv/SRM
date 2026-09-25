@@ -117,11 +117,14 @@ export class AuthenticationDetector {
           const hasNavLists = !!document.getElementById('listId7') || !!document.getElementById('listId9');
 
           // Failure signals in page text or alert boxes
-          const alertEl = document.querySelector('.alert, .text-danger, font[color="red"], span.error');
+          // Only treat an .alert element as a failure signal if it contains error-related keywords
+          const errorKeywords = /invalid|wrong|incorrect|failed|mismatch|captcha|password|credentials|does not exist|not found/i;
+          const alertEl = document.querySelector('.alert-danger, .alert-warning, .text-danger, font[color="red"], span.error');
           const alertText = alertEl ? (alertEl.textContent || '').trim().replace(/\s+/g, ' ') : '';
+          const alertIsError = alertText.length > 0 && errorKeywords.test(alertText);
 
           const hasInvalidMsg = 
-            alertText.length > 0 ||
+            alertIsError ||
             bodyText.includes('Invalid User Name or Password') ||
             bodyText.includes('Invalid credentials') ||
             bodyText.includes('Invalid Captcha') ||
@@ -139,7 +142,7 @@ export class AuthenticationDetector {
             hasLogout,
             hasNavLists,
             hasInvalidMsg,
-            invalidText: alertText || (hasInvalidMsg ? 'Invalid credentials or CAPTCHA entered' : '')
+            invalidText: (alertIsError ? alertText : '') || (hasInvalidMsg ? 'Invalid credentials or CAPTCHA' : '')
           };
         }).catch(() => null);
 

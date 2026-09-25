@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { apiFetch } from '../utils/api';
 
 interface CredentialsFormProps {
   sessionId: string;
-  captchaBase64: string | null;
+  captchaBase64?: string | null;
   statusDetail: string | null;
   onSuccess: () => void;
   onCancel: () => void;
@@ -12,7 +12,6 @@ interface CredentialsFormProps {
 
 export const CredentialsForm: React.FC<CredentialsFormProps> = ({ 
   sessionId, 
-  captchaBase64, 
   statusDetail,
   onSuccess,
   onCancel,
@@ -20,19 +19,13 @@ export const CredentialsForm: React.FC<CredentialsFormProps> = ({
 }) => {
   const [netId, setNetId] = useState('');
   const [password, setPassword] = useState('');
-  const [captcha, setCaptcha] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Automatically clear old captcha when a new one is loaded
-  useEffect(() => {
-    setCaptcha('');
-  }, [captchaBase64]);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!netId || !password || !captcha) {
-      setError('Please fill in all fields.');
+    if (!netId || !password) {
+      setError('Please enter your NetID and Password.');
       return;
     }
 
@@ -43,7 +36,7 @@ export const CredentialsForm: React.FC<CredentialsFormProps> = ({
       const res = await apiFetch('/api/connect/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, netId, password, captcha })
+        body: JSON.stringify({ sessionId, netId, password })
       });
 
       if (!res.ok) {
@@ -160,42 +153,19 @@ export const CredentialsForm: React.FC<CredentialsFormProps> = ({
           />
         </div>
 
-        <div>
-          <label htmlFor="captcha" style={{ display: 'block', fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
-            CAPTCHA
-          </label>
-          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', marginBottom: '0.75rem' }}>
-            {captchaBase64 ? (
-              <img 
-                src={`data:image/jpeg;base64,${captchaBase64}`} 
-                alt="CAPTCHA" 
-                style={{ height: '48px', borderRadius: '4px', background: 'white', padding: '4px' }} 
-              />
-            ) : (
-              <div style={{ height: '48px', width: '120px', background: 'rgba(255,255,255,0.1)', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                Loading...
-              </div>
-            )}
-          </div>
-          <input
-            id="captcha"
-            type="text"
-            value={captcha}
-            onChange={(e) => setCaptcha(e.target.value)}
-            placeholder="Enter CAPTCHA text"
-            disabled={isSubmitting || !captchaBase64}
-            autoComplete="off"
-            style={{
-              width: '100%',
-              padding: '0.75rem 1rem',
-              background: 'rgba(0, 0, 0, 0.2)',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
-              borderRadius: '8px',
-              color: 'var(--text-main)',
-              fontSize: '1rem',
-              outline: 'none'
-            }}
-          />
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+          padding: '0.6rem 0.8rem',
+          background: 'rgba(16, 185, 129, 0.08)',
+          border: '1px solid rgba(16, 185, 129, 0.2)',
+          borderRadius: '8px',
+          fontSize: '0.8rem',
+          color: '#6ee7b7'
+        }}>
+          <span>🔐</span>
+          <span>CAPTCHA is handled automatically — no need to type it.</span>
         </div>
 
         <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
@@ -219,7 +189,7 @@ export const CredentialsForm: React.FC<CredentialsFormProps> = ({
           </button>
           <button
             type="submit"
-            disabled={isSubmitting || !captchaBase64}
+            disabled={isSubmitting}
             style={{
               flex: 2,
               padding: '0.85rem',
@@ -229,8 +199,8 @@ export const CredentialsForm: React.FC<CredentialsFormProps> = ({
               borderRadius: '8px',
               fontSize: '0.95rem',
               fontWeight: 600,
-              cursor: (isSubmitting || !captchaBase64) ? 'not-allowed' : 'pointer',
-              opacity: (isSubmitting || !captchaBase64) ? 0.7 : 1,
+              cursor: isSubmitting ? 'not-allowed' : 'pointer',
+              opacity: isSubmitting ? 0.7 : 1,
               display: 'flex',
               justifyContent: 'center',
               alignItems: 'center',

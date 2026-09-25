@@ -58,10 +58,10 @@ router.get('/connect/status', (req: Request, res: Response) => {
  */
 router.post('/connect/submit', async (req: Request, res: Response) => {
   console.log('[SRM] Received POST /api/connect/submit request');
-  const { sessionId, netId, password, captcha } = req.body;
+  const { sessionId, netId, password } = req.body;
 
-  if (!sessionId || !netId || !password || !captcha) {
-    res.status(400).json({ error: 'Missing required credential fields' });
+  if (!sessionId || !netId || !password) {
+    res.status(400).json({ error: 'Missing required fields: sessionId, netId, password' });
     return;
   }
 
