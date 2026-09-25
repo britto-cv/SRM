@@ -12,21 +12,26 @@ export interface AuthenticationDetectorOptions {
 export class AuthenticationDetector {
   private lastAlertMessage: string | null = null;
   private currentAuthState: ConnectionState = 'WAITING_FOR_LOGIN';
-  private dialogListenerAttached: boolean = false;
+  private dialogListenerPage: Page | null = null;
 
   /**
    * Attaches dialog and event listeners to the Page to capture native alert popups
    * commonly used by the legacy SRMIST portal (e.g., "Invalid User Name or Password").
    */
   public attachPageListeners(page: Page, updateState: (state: ConnectionState, detail?: string) => void): void {
-    if (this.dialogListenerAttached) return;
+    // Each reconnect creates a new Page. A listener on a previous (closed)
+    // page cannot observe alerts for the new login session.
+    if (this.dialogListenerPage === page) return;
+    this.dialogListenerPage = page;
 
     page.on('dialog', async (dialog: Dialog) => {
       const message = dialog.message() || '';
       this.lastAlertMessage = message;
       console.log(`[SRM] Login alert dialog detected: "${message}"`);
       
-      this.currentAuthState = 'LOGIN_FAILED';
+      // Do not set currentAuthState before updateState. Doing so caused
+      // updateState to consider the failure unchanged and skip its callback,
+      // leaving the deployed UI stuck on "Authenticating" without a new CAPTCHA.
       updateState('LOGIN_FAILED', message);
       
       // Dismiss dialog so it doesn't freeze the page or prevent the user from re-entering
@@ -69,6 +74,7 @@ export class AuthenticationDetector {
 
     const startTime = Date.now();
     this.currentAuthState = 'WAITING_FOR_LOGIN';
+    this.lastAlertMessage = null;
 
     const updateState = (newState: ConnectionState, detail?: string) => {
       if (newState !== this.currentAuthState) {
