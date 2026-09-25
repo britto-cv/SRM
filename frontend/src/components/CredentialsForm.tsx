@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { apiFetch } from '../utils/api';
 
 interface CredentialsFormProps {
@@ -23,6 +23,11 @@ export const CredentialsForm: React.FC<CredentialsFormProps> = ({
   const [captcha, setCaptcha] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Automatically clear old captcha when a new one is loaded
+  useEffect(() => {
+    setCaptcha('');
+  }, [captchaBase64]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

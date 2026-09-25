@@ -381,7 +381,7 @@ function App() {
           </div>
         )}
 
-        {appState === 'WAITING_FOR_CREDENTIALS' && (
+        {(appState === 'WAITING_FOR_CREDENTIALS' || appState === 'LOGIN_FAILED') && (
           <CredentialsForm
             sessionId={sessionId || ''}
             captchaBase64={captchaBase64}
@@ -395,10 +395,10 @@ function App() {
           />
         )}
 
-        {(appState === 'WAITING_FOR_LOGIN' || appState === 'AUTHENTICATING' || appState === 'LOGIN_FAILED') && (
+        {(appState === 'WAITING_FOR_LOGIN' || appState === 'AUTHENTICATING') && (
           <div className="empty-state connecting">
             <div className="spinner"></div>
-            <h2>{appState === 'AUTHENTICATING' ? 'Authenticating with SRMIST...' : (appState === 'LOGIN_FAILED' ? 'Login Failed' : 'Waiting for Authentication')}</h2>
+            <h2>Authenticating with SRMIST...</h2>
             <div style={{ marginTop: '1rem', color: 'var(--text-muted)', maxWidth: '440px', margin: '1rem auto' }}>
               <p style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
                 {appState === 'AUTHENTICATING' 
@@ -407,18 +407,12 @@ function App() {
               </p>
               <p style={{ marginTop: '0.5rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
                 {sessionId 
-                  ? (appState === 'LOGIN_FAILED' ? 'Refreshing CAPTCHA for re-entry...' : 'Communicating with the student portal...')
+                  ? 'Communicating with the student portal...'
                   : 'Please manually enter your NetID, password, and CAPTCHA in the open browser window.'}
               </p>
               {appState === 'AUTHENTICATING' && (
                 <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'rgba(59, 130, 246, 0.1)', color: '#60a5fa', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
                   Verifying credentials and security checks...
-                </div>
-              )}
-              {appState === 'LOGIN_FAILED' && (
-                <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
-                  <strong>{statusDetail || 'Invalid credentials or CAPTCHA detected.'}</strong>
-                  {sessionId ? ' Updating CAPTCHA...' : ' Please check your NetID, password, or CAPTCHA.'}
                 </div>
               )}
               <div style={{ marginTop: '1.25rem', display: 'flex', justifyContent: 'center', gap: '1rem' }}>

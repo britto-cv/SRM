@@ -143,6 +143,27 @@ export class PlaywrightSessionManager {
         deviceScaleFactor: 1
       });
 
+      // Disguise automation flags for strict bot-detection in SRM telemetry.js
+      await this.context.addInitScript(() => {
+        Object.defineProperty(navigator, 'webdriver', {
+          get: () => undefined,
+        });
+        Object.defineProperty(navigator, 'languages', {
+          get: () => ['en-US', 'en'],
+        });
+        Object.defineProperty(navigator, 'plugins', {
+          get: () => [1, 2, 3, 4, 5],
+        });
+        if (!(window as any).chrome) {
+          (window as any).chrome = {
+            runtime: {},
+            loadTimes: function () {},
+            csi: function () {},
+            app: {}
+          };
+        }
+      });
+
       this.page = await this.context.newPage();
       console.log('[SRM] Page created');
 
@@ -251,10 +272,52 @@ export class PlaywrightSessionManager {
     try {
       this.setState('AUTHENTICATING', 'Submitting credentials to SRMIST...');
       
-      // Fill the fields securely
+      // Ensure fields are properly focused and filled with real input events
+      await this.page.click('input#username');
       await this.page.fill('input#username', netId);
+      await this.page.dispatchEvent('input#username', 'input');
+      await this.page.dispatchEvent('input#username', 'change');
+
+      await this.page.click('input#password');
       await this.page.fill('input#password', pass);
+      await this.page.dispatchEvent('input#password', 'input');
+      await this.page.dispatchEvent('input#password', 'change');
+
+      await this.page.click('input#captcha');
       await this.page.fill('input#captcha', captchaText);
+      await this.page.dispatchEvent('input#captcha', 'input');
+      await this.page.dispatchEvent('input#captcha', 'change');
+
+      // Re-apply telemetry wrapper right before submit so anti-bot telemetry in telemetry.js passes
+      await this.page.evaluate(() => {
+        try {
+          if (typeof (window as any).getTelemetryPayload === 'function' && !(window as any)._telemetryWrapped) {
+            (window as any)._telemetryWrapped = true;
+            const orig = (window as any).getTelemetryPayload;
+            (window as any).getTelemetryPayload = function () {
+              try {
+                const encoded = orig();
+                let decoded = '';
+                try {
+                  decoded = decodeURIComponent(atob(encoded));
+                } catch {
+                  decoded = atob(encoded);
+                }
+                const data = JSON.parse(decoded);
+                data.webdriver = false;
+                data.keystrokeCount = Math.floor(Math.random() * 15) + 25;
+                data.mouseClicks = Math.floor(Math.random() * 3) + 3;
+                data.mouseMovements = Math.floor(Math.random() * 25) + 20;
+                data.typingSpeedMs = Math.floor(Math.random() * 1500) + 3200;
+                data.timeOnPageMs = Math.floor(Math.random() * 2000) + 4500;
+                return btoa(encodeURIComponent(JSON.stringify(data)));
+              } catch (e) {
+                return orig();
+              }
+            };
+          }
+        } catch {}
+      }).catch(() => {});
       
       // Click specifically the login button (#btnLogin), avoiding #btnRefresh
       await this.page.click('#btnLogin, button#btnLogin');
@@ -293,7 +356,18 @@ export class PlaywrightSessionManager {
             if (newState === 'LOGIN_FAILED' && isHeadless && this.page) {
               console.log('[SRM] Login failed in headless mode, refreshing CAPTCHA...');
               try {
-                await this.page.waitForTimeout(600);
+                await this.page.waitForTimeout(500);
+
+                if (!this.page.url().includes('youLogin.jsp')) {
+                  console.log('[SRM] Returning to login page after failed attempt...');
+                  await this.page.goto(LOGIN_URL, { waitUntil: 'commit', timeout: 15000 }).catch(() => {});
+                  await this.page.waitForSelector('#login_form, input#username', { timeout: 10000 }).catch(() => {});
+                } else {
+                  console.log('[SRM] Clicking #btnRefresh for a new CAPTCHA...');
+                  await this.page.click('#btnRefresh, button#btnRefresh').catch(() => {});
+                  await this.page.waitForTimeout(1000);
+                }
+
                 const captchaElement = await this.page.waitForSelector('img#secure_captcha, img[src*="captcha"]', { timeout: 8000 });
                 const captchaBuffer = await captchaElement.screenshot();
                 this.activeCaptchaBase64 = captchaBuffer.toString('base64');
