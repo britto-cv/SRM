@@ -52,6 +52,8 @@ export const CredentialsForm: React.FC<CredentialsFormProps> = ({
     }
   };
 
+  const isFailureMessage = Boolean(statusDetail && /invalid|failed|wrong|error|alert/i.test(statusDetail));
+
   return (
     <div style={{
       maxWidth: '440px',
@@ -66,9 +68,24 @@ export const CredentialsForm: React.FC<CredentialsFormProps> = ({
         <h2 style={{ fontSize: '1.4rem', margin: '0 0 0.5rem 0', color: 'var(--text-main)' }}>
           Connect to SRM
         </h2>
-        <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', margin: 0 }}>
-          {statusDetail || 'Please enter your portal credentials.'}
-        </p>
+        {isFailureMessage ? (
+          <div style={{
+            marginTop: '0.75rem',
+            padding: '0.6rem 0.8rem',
+            background: 'rgba(239, 68, 68, 0.12)',
+            color: '#f87171',
+            borderRadius: '8px',
+            border: '1px solid rgba(239, 68, 68, 0.25)',
+            fontSize: '0.85rem',
+            fontWeight: 500
+          }}>
+            {statusDetail}
+          </div>
+        ) : (
+          <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', margin: 0 }}>
+            {statusDetail || 'Please enter your portal credentials.'}
+          </p>
+        )}
       </div>
 
       {error && (

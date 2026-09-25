@@ -11,7 +11,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { PwaInstallPrompt } from './components/PwaInstallPrompt';
 import { PortalSyncModal } from './components/PortalSyncModal';
 import { CredentialsForm } from './components/CredentialsForm';
-import { apiFetch } from './utils/api';
+import { apiFetch, hasConfiguredApi } from './utils/api';
 import './App.css';
 
 // Every state here needs status polling. In particular, a deployed backend
@@ -103,9 +103,14 @@ function App() {
         console.error('Failed to parse student data from URL:', err);
         window.history.replaceState(null, '', window.location.pathname);
       }
-    } else {
-      // Auto-connect if there is no data in URL hash
+    } else if (hasConfiguredApi) {
+      // Auto-connect if there is no data in URL hash and the API is available.
       handleConnect();
+    } else {
+      // A static deployment can still import attendance entirely in the browser.
+      // Do not send /api calls to the frontend host, where they resolve to the SPA.
+      setShowSyncModal(true);
+      setStatusDetail('Use Portal Sync to import your attendance, or configure VITE_API_URL and redeploy to enable portal connection.');
     }
   }, []);
 
@@ -368,7 +373,10 @@ function App() {
             <div className="spinner"></div>
             <h2>Starting secure browser session...</h2>
             <div style={{ marginTop: '1rem', color: 'var(--text-muted)' }}>
-              <p>Opening local browser for authentication...</p>
+              <p>{statusDetail || 'Connecting to attendance service...'}</p>
+              <p style={{ marginTop: '0.5rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                Cloud browser is initializing. This may take a few seconds if the backend server is waking up.
+              </p>
             </div>
           </div>
         )}
@@ -389,13 +397,17 @@ function App() {
         {(appState === 'WAITING_FOR_LOGIN' || appState === 'AUTHENTICATING' || appState === 'LOGIN_FAILED') && (
           <div className="empty-state connecting">
             <div className="spinner"></div>
-            <h2>{appState === 'AUTHENTICATING' ? 'Authenticating with SRMIST...' : 'Waiting for Authentication'}</h2>
+            <h2>{appState === 'AUTHENTICATING' ? 'Authenticating with SRMIST...' : (appState === 'LOGIN_FAILED' ? 'Login Failed' : 'Waiting for Authentication')}</h2>
             <div style={{ marginTop: '1rem', color: 'var(--text-muted)', maxWidth: '440px', margin: '1rem auto' }}>
               <p style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                SRMIST browser opened — please complete login
+                {appState === 'AUTHENTICATING' 
+                  ? 'Verifying NetID & CAPTCHA with SRMIST...' 
+                  : (sessionId ? 'Processing authentication session...' : 'SRMIST browser opened — please complete login')}
               </p>
               <p style={{ marginTop: '0.5rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                Please manually enter your NetID, password, and CAPTCHA in the open browser window.
+                {sessionId 
+                  ? (appState === 'LOGIN_FAILED' ? 'Refreshing CAPTCHA for re-entry...' : 'Communicating with the student portal...')
+                  : 'Please manually enter your NetID, password, and CAPTCHA in the open browser window.'}
               </p>
               {appState === 'AUTHENTICATING' && (
                 <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'rgba(59, 130, 246, 0.1)', color: '#60a5fa', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
@@ -404,7 +416,8 @@ function App() {
               )}
               {appState === 'LOGIN_FAILED' && (
                 <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
-                  <strong>Invalid credentials detected.</strong> Please check your NetID, password, or CAPTCHA.
+                  <strong>{statusDetail || 'Invalid credentials or CAPTCHA detected.'}</strong>
+                  {sessionId ? ' Updating CAPTCHA...' : ' Please check your NetID, password, or CAPTCHA.'}
                 </div>
               )}
             </div>

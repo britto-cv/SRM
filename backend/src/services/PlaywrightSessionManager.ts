@@ -47,6 +47,7 @@ export class PlaywrightSessionManager {
   private detector: AuthenticationDetector;
   private activeData: NormalizedStudentData | null = null;
   private isConnecting: boolean = false;
+  private isMonitoring: boolean = false;
   
   constructor() {
     this.detector = new AuthenticationDetector();
@@ -165,10 +166,23 @@ export class PlaywrightSessionManager {
       console.log('[SRM] Opening SRMIST login page...');
       console.log(`[SRM] SRM URL navigation started: ${LOGIN_URL}`);
 
-      const response = await this.page.goto(LOGIN_URL, {
-        waitUntil: 'domcontentloaded',
-        timeout: 30000
-      });
+      // The SRM portal occasionally replaces the first navigation before the
+      // document fires DOMContentLoaded. Playwright reports that as
+      // net::ERR_ABORTED even when the replacement page subsequently loads
+      // normally. Start navigation, then use the presence of the login form
+      // below as the authoritative readiness check.
+      let response = null;
+      try {
+        response = await this.page.goto(LOGIN_URL, {
+          waitUntil: 'commit',
+          timeout: 30000
+        });
+      } catch (error: any) {
+        if (this.page.isClosed()) {
+          throw error;
+        }
+        console.warn('[SRM] Initial portal navigation was interrupted; waiting for the redirected login page:', error.message);
+      }
 
       const finalUrl = this.page.url();
       const pageTitle = await this.page.title().catch(() => 'Unknown');
@@ -242,8 +256,8 @@ export class PlaywrightSessionManager {
       await this.page.fill('input#password', pass);
       await this.page.fill('input#captcha', captchaText);
       
-      // Click the login button
-      await this.page.click('button#btnLogin, input[type="submit"]');
+      // Click specifically the login button (#btnLogin), avoiding #btnRefresh
+      await this.page.click('#btnLogin, button#btnLogin');
       
       // Start background monitoring for login success/failure
       // We know it is headless since submitCredentials is only called in WAITING_FOR_CREDENTIALS
@@ -260,8 +274,9 @@ export class PlaywrightSessionManager {
    * Continuously monitors the active page for manual login completion, failures, or closure.
    */
   private async startBackgroundMonitoring(activeSessionId: string, isHeadless: boolean = false) {
-    if (!this.page || this.sessionId !== activeSessionId) return;
+    if (!this.page || this.sessionId !== activeSessionId || this.isMonitoring) return;
 
+    this.isMonitoring = true;
     try {
       const result = await this.detector.monitorAuthentication(this.page, {
         timeoutMs: 600000, // 10 minutes timeout for manual credential, CAPTCHA, and MFA entry
@@ -274,14 +289,16 @@ export class PlaywrightSessionManager {
             if (newState === 'LOGIN_FAILED' && isHeadless && this.page) {
               console.log('[SRM] Login failed in headless mode, refreshing CAPTCHA...');
               try {
-                // The page has likely reloaded, wait for the new captcha image
+                await this.page.waitForTimeout(600);
                 const captchaElement = await this.page.waitForSelector('img#secure_captcha, img[src*="captcha"]', { timeout: 8000 });
                 const captchaBuffer = await captchaElement.screenshot();
                 this.activeCaptchaBase64 = captchaBuffer.toString('base64');
                 console.log('[SRM] New CAPTCHA image extracted successfully');
-                this.setState('WAITING_FOR_CREDENTIALS', 'Login failed. Please verify your credentials and enter the new CAPTCHA.');
+                const failureDetail = detail ? `${detail}. Please enter the new CAPTCHA below.` : 'Login failed. Please verify your credentials and enter the new CAPTCHA.';
+                this.setState('WAITING_FOR_CREDENTIALS', failureDetail);
               } catch (e) {
                 console.error('[SRM] Failed to refresh CAPTCHA image', e);
+                this.setState('WAITING_FOR_CREDENTIALS', 'Login failed. Please verify your credentials and try again.');
               }
             }
           }
@@ -337,6 +354,8 @@ export class PlaywrightSessionManager {
         this.setState('ERROR', error.message || 'Extraction failed');
       }
       await this.cleanup();
+    } finally {
+      this.isMonitoring = false;
     }
   }
 
@@ -387,8 +406,10 @@ export class PlaywrightSessionManager {
 
     // Zero-persistence enforcement:
     this.activeData = null;
+    this.activeCaptchaBase64 = null;
     this.sessionId = null;
     this.isConnecting = false;
+    this.isMonitoring = false;
     this.setState('DISCONNECTED', 'Session cleanly closed');
     console.log('[SRM] Cleanup completed');
   }

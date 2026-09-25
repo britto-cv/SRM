@@ -94,31 +94,7 @@ export class AuthenticationDetector {
       try {
         const currentUrl = page.url();
 
-        // 1. Check if user is actively submitting (Navigating or LoginServlet)
-        if (currentUrl.includes('LoginServlet')) {
-          updateState('AUTHENTICATING', 'Submitting credentials to SRMIST...');
-          await new Promise(resolve => setTimeout(resolve, 500));
-          continue;
-        }
-
-        // 2. Check for Multi-Signal AUTHENTICATED states:
-        // Signal A: URL moved away from login page to known student portal paths
-        const isUrlAuthenticated = 
-          currentUrl.includes('sp.srmist.edu.in') &&
-          !currentUrl.includes('loginManager') &&
-          !currentUrl.includes('youLogin.jsp') &&
-          !currentUrl.includes('LoginServlet') &&
-          (
-            currentUrl.includes('studentDetails.jsp') ||
-            currentUrl.includes('template') ||
-            currentUrl.includes('student_dashboard') ||
-            currentUrl.includes('report') ||
-            currentUrl.includes('welcome.jsp') ||
-            currentUrl.includes('home.jsp') ||
-            currentUrl.includes('/students/')
-          );
-
-        // Signal B: Check DOM for presence of authenticated student profile or navigation markers
+        // 1. Check DOM for presence of authenticated student profile, navigation markers, or error messages
         const domSignals = await page.evaluate(() => {
           const bodyText = document.body ? document.body.innerText : '';
           const hasLoginForm = !!document.getElementById('login_form') || !!document.querySelector('form[action*="LoginServlet"]');
@@ -131,8 +107,12 @@ export class AuthenticationDetector {
           const hasLogout = !!document.querySelector('a[href*="logout"], a[href*="Logout"], a[href*="youLogin.jsp?logout=true"], .logout, #logout');
           const hasNavLists = !!document.getElementById('listId7') || !!document.getElementById('listId9');
 
-          // Failure signals in page text
+          // Failure signals in page text or alert boxes
+          const alertEl = document.querySelector('.alert, .text-danger, font[color="red"], span.error');
+          const alertText = alertEl ? (alertEl.textContent || '').trim().replace(/\s+/g, ' ') : '';
+
           const hasInvalidMsg = 
+            alertText.length > 0 ||
             bodyText.includes('Invalid User Name or Password') ||
             bodyText.includes('Invalid credentials') ||
             bodyText.includes('Invalid Captcha') ||
@@ -150,13 +130,40 @@ export class AuthenticationDetector {
             hasLogout,
             hasNavLists,
             hasInvalidMsg,
+            invalidText: alertText || (hasInvalidMsg ? 'Invalid credentials or CAPTCHA entered' : '')
           };
         }).catch(() => null);
 
+        // 2. Check if user is actively submitting (LoginServlet in-flight before DOM renders)
+        if (currentUrl.includes('LoginServlet') && (!domSignals || (!domSignals.hasInvalidMsg && !domSignals.hasLoginForm))) {
+          updateState('AUTHENTICATING', 'Submitting credentials to SRMIST...');
+          await new Promise(resolve => setTimeout(resolve, 500));
+          continue;
+        }
+
+        // Check for Multi-Signal AUTHENTICATED states:
+        // Signal A: URL moved away from login page to known student portal paths
+        const isUrlAuthenticated = 
+          currentUrl.includes('sp.srmist.edu.in') &&
+          !currentUrl.includes('loginManager') &&
+          !currentUrl.includes('youLogin.jsp') &&
+          !currentUrl.includes('LoginServlet') &&
+          (
+            currentUrl.includes('studentDetails.jsp') ||
+            currentUrl.includes('template') ||
+            currentUrl.includes('student_dashboard') ||
+            currentUrl.includes('report') ||
+            currentUrl.includes('welcome.jsp') ||
+            currentUrl.includes('home.jsp') ||
+            currentUrl.includes('/students/')
+          );
+
         if (domSignals) {
-          // Check for login failure in DOM
-          if (domSignals.hasInvalidMsg) {
-            updateState('LOGIN_FAILED', 'Invalid credentials or CAPTCHA entered');
+          // Check for login failure in DOM (either explicit error message or remaining on LoginServlet with login form)
+          if (domSignals.hasInvalidMsg || (currentUrl.includes('LoginServlet') && domSignals.hasLoginForm)) {
+            const failReason = domSignals.invalidText || 'Invalid credentials or CAPTCHA entered';
+            console.log(`[SRM] Login failure detected on page: ${failReason}`);
+            updateState('LOGIN_FAILED', failReason);
             await new Promise(resolve => setTimeout(resolve, checkIntervalMs));
             continue;
           }

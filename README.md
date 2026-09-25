@@ -22,3 +22,10 @@ include `/api` or a trailing slash. A template is available at
 The backend needs Playwright Chromium installed and must remain running. After
 changing a Vite environment variable, redeploy the frontend because Vite embeds
 it at build time.
+
+If the deployed site displays "Attendance service is temporarily unavailable",
+open the browser network panel and check the `/api/health` request against the
+value of `VITE_API_URL`. A missing variable makes a static frontend send `/api`
+requests to itself, which cannot provide attendance data. For deployments that
+do not run the backend, use **Portal Sync**: it imports the attendance table in
+the browser and does not require sending SRMIST credentials to a cloud service.
